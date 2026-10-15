@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>EE vs EA - Team Battle</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #fdfbf7;
+            --primary: #FF6B6B;
+            --secondary: #4ECDC4;
+            --accent: #FFE66D;
+            --dark: #292F36;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100dvh; /* Adapts to mobile browser bars */
+            overflow: hidden; /* Strict no scrolling */
+            background-color: var(--bg-color);
+            font-family: 'Nunito', sans-serif;
+            color: var(--dark);
+            touch-action: manipulation;
+        }
+
+        .screen {
+            display: none;
+            width: 100%;
+            height: 100%;
+            flex-direction: column;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        /* Chibi/Neo-brutalism UI components */
+        .neo-box {
+            border: 4px solid var(--dark);
+            border-radius: 24px;
+            box-shadow: 6px 6px 0px var(--dark);
+            background-color: white;
+        }
+
+        .neo-btn {
+            border: 4px solid var(--dark);
+            border-radius: 9999px; /* Pill shape */
+            box-shadow: 4px 4px 0px var(--dark);
+            transition: transform 0.1s, box-shadow 0.1s;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: 900;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .neo-btn:active {
+            transform: translate(4px, 4px);
+            box-shadow: 0px 0px 0px var(--dark);
+        }
+
+        .neo-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: 4px 4px 0px var(--dark) !important;
+        }
+
+        /* Text Utilities */
+        .text-stroke {
+            -webkit-text-stroke: 2px var(--dark);
+            color: white;
+        }
+        
+        .text-stroke-sm {
+            -webkit-text-stroke: 1px var(--dark);
+            color: white;
+        }
+
+        .title-text { font-size: clamp(32px, 6vw, 72px); line-height: 1.1; }
+        .subtitle-text { font-size: clamp(20px, 4vw, 36px); }
+        .question-text { font-size: clamp(24px, 4vw, 42px); }
+        .emoji-giant { font-size: clamp(64px, 12vw, 150px); line-height: 1; }
+        .emoji-large { font-size: clamp(48px, 8vw, 100px); line-height: 1; }
+        .btn-text { font-size: clamp(18px, 3vw, 32px); }
+        .score-text { font-size: clamp(16px, 2.5vw, 28px); }
+
+        /* Animations */
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop { animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        
+        @keyframes pulse-fast {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .animate-pulse-fast { animation: pulse-fast 1s infinite; }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+
+        @keyframes streakPop {
+            0% { transform: translate(-50%, -50%) scale(0.5) rotate(-10deg); opacity: 0; }
+            50% { transform: translate(-50%, -50%) scale(1.2) rotate(5deg); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+        }
+        .streak-anim {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            z-index: 100;
+            animation: streakPop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        /* AR Specific & Game Styles */
+        #ar-video {
+            transform: scaleX(-1);
+        }
+        .cursor-crosshair {
+            position: fixed; width: 40px; height: 40px; border: 4px solid #FFE66D; 
+            border-radius: 50%; pointer-events: none; z-index: 9999; 
+            transform: translate(-50%, -50%); box-shadow: 0 0 15px #FF6B6B; 
+            background: rgba(255,255,255,0.3); transition: width 0.1s, height 0.1s, background 0.1s; 
+        }
+        .cursor-crosshair.pinching { 
+            width: 24px; height: 24px; background: rgba(255,107,107,0.7); border-color: #FF6B6B;
+        }
+        .falling-target { 
+            will-change: transform; transition: filter 0.15s ease-out; 
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px) rotate(-5deg); }
+            75% { transform: translateX(10px) rotate(5deg); }
+        }
+        .shake-anim { animation: shake 0.3s ease-in-out; }
+
+        /* Layout Zones */
+        #game-header { flex: 0 0 auto; z-index: 10; }
+        #game-main { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; justify-content: center; position: relative; }
+        #game-footer { flex: 0 0 auto; z-index: 10; }
+
+        /* Timer Bar */
+        #timer-bar {
+            transition: width 1s linear, background-color 0.3s;
+        }
+
+        /* Group Setup Scroll (Only allowed here) */
+        #group-cards-container {
+            overflow-y: auto;
+            max-height: 50vh;
+        }
+        
+        /* Hide scrollbar for cleaner look */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--dark); border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+    <div id="screen-home" class="screen active bg-[#FFE66D] justify-center items-center p-4 relative">
+        <!-- Decorative bg elements -->
+        <div class="absolute top-10 left-10 text-6xl opacity-50 animate-float" style="animation-delay: 0s;">🦷</div>
+        <div class="absolute bottom-10 right-10 text-6xl opacity-50 animate-float" style="animation-delay: 1s;">🏖️</div>
+        <div class="absolute top-20 right-10 text-6xl opacity-50 animate-float" style="animation-delay: 0.5s;">🧀</div>
+        <div class="absolute bottom-20 left-10 text-6xl opacity-50 animate-float" style="animation-delay: 1.5s;">🫛</div>
+        
+        <div class="neo-box p-8 md:p-12 text-center max-w-3xl w-full mx-4 flex flex-col items-center gap-6 z-10 animate-pop">
+            <div class="flex justify-center gap-4 text-5xl mb-2">
+                <span class="animate-pulse-fast">EE</span> <span class="text-3xl mt-2">VS</span> <span class="animate-pulse-fast text-[#FF6B6B]">EA</span>
+            </div>
+            <h1 class="title-text font-black uppercase text-stroke tracking-wide text-[#4ECDC4]">Team Battle</h1>
+            <h2 class="subtitle-text font-bold uppercase text-[var(--dark)] bg-white px-6 py-2 rounded-full border-4 border-[var(--dark)]">
+                Listen • Read • Choose • Win!
+            </h2>
+            
+            <button onclick="changeScreen('screen-setup')" class="neo-btn bg-[#FF6B6B] text-white px-10 py-4 mt-8 btn-text w-full md:w-auto hover:bg-[#ff5252]">
+                Start Game!
+            </button>
+        </div>
+    </div>
+
+    <div id="screen-setup" class="screen bg-[#4ECDC4] justify-center items-center p-4">
+        <div class="neo-box p-6 w-full max-w-4xl flex flex-col gap-4 animate-pop">
+            <h2 class="title-text font-black text-center text-stroke text-[#FFE66D]">Let's Make Teams!</h2>
+            
+            <div class="flex flex-col md:flex-row gap-6 w-full">
+                <!-- Names Input -->
+                <div class="flex-1 flex flex-col gap-2">
+                    <label class="font-bold text-xl uppercase">Enter Pupil Names <br><span class="text-sm normal-case text-gray-600">(One per line or separated by commas)</span></label>
+                    <textarea id="pupil-names" class="w-full h-48 p-4 border-4 border-black rounded-xl text-lg font-bold resize-none shadow-[4px_4px_0_0_#000] focus:outline-none focus:ring-4 ring-[#FF6B6B]" placeholder="Aiman&#10;Sofia&#10;Ali&#10;Hannah&#10;Rayyan"></textarea>
+                </div>
+                
+                <!-- Group Count Selection -->
+                <div class="flex-1 flex flex-col gap-4">
+                    <label class="font-bold text-xl uppercase">Number of Groups</label>
+                    <div class="grid grid-cols-3 gap-3" id="group-buttons">
+                        <button class="neo-btn group-btn bg-white py-3 active text-2xl" onclick="selectGroupCount(2)" data-count="2">2</button>
+                        <button class="neo-btn group-btn bg-white py-3 text-2xl" onclick="selectGroupCount(3)" data-count="3">3</button>
+                        <button class="neo-btn group-btn bg-white py-3 text-2xl" onclick="selectGroupCount(4)" data-count="4">4</button>
+                        <button class="neo-btn group-btn bg-white py-3 text-2xl" onclick="selectGroupCount(5)" data-count="5">5</button>
+                        <button class="neo-btn group-btn bg-white py-3 text-2xl" onclick="selectGroupCount(6)" data-count="6">6</button>
+                    </div>
+                    
+                    <button onclick="generateGroups()" class="neo-btn bg-[#FF6B6B] text-white py-4 mt-auto btn-text w-full animate-pulse-fast">
+                        Give Us Groups!
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="screen-groups" class="screen bg-[#FF6B6B] justify-between p-4 pb-8">
+        <h2 class="title-text font-black text-center text-stroke text-white mt-4 flex-none">Teams Ready!</h2>
+        
+        <!-- Teams Container (Scrollable only if necessary) -->
+        <div id="group-cards-container" class="w-full max-w-6xl mx-auto flex-grow my-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 content-start p-2">
+            <!-- Team cards injected here by JS -->
+        </div>
+
+        <div class="flex flex-col md:flex-row justify-center gap-4 w-full max-w-4xl mx-auto flex-none">
+            <button onclick="generateGroups()" class="neo-btn bg-white text-[var(--dark)] px-8 py-4 btn-text flex-1">
+                Shuffle Again
+            </button>
+            <button onclick="startBattle()" class="neo-btn bg-[#FFE66D] text-[var(--dark)] px-8 py-4 btn-text flex-1 animate-pulse-fast">
+                Start Battle!
+            </button>
+        </div>
+    </div>
+
+    <!-- NEW SCREEN GAME FOR AR -->
+    <div id="screen-game" class="screen bg-transparent relative overflow-hidden">
+        <!-- AR Camera Background -->
+        <video id="ar-video" autoplay playsinline class="absolute inset-0 w-full h-full object-cover z-0"></video>
+        
+        <!-- Crosshair Cursor -->
+        <div id="ar-cursor" class="cursor-crosshair hidden"></div>
+
+        <!-- Gameplay Overlay (Safe Zones) -->
+        <div class="relative z-10 w-full h-full flex flex-col pointer-events-none">
+            <!-- TOP ZONE: Scoreboard & Question -->
+            <header id="game-header" class="w-full bg-[#292F36]/90 backdrop-blur-md p-2 sm:p-4 shadow-lg text-white flex flex-col gap-2 pointer-events-auto flex-none border-b-4 border-[var(--dark)]">
+                <!-- Round & Active Team Info -->
+                <div class="flex justify-between items-center px-2">
+                    <div id="round-display" class="font-bold subtitle-text uppercase text-[#FFE66D]">Round 1</div>
+                    <div id="active-team-display" class="font-black subtitle-text uppercase text-[#4ECDC4] bg-white text-[var(--dark)] px-4 py-1 rounded-full border-2 border-[#4ECDC4]">Team 1's Turn!</div>
+                </div>
+                
+                <!-- Teams Score Track -->
+                <div id="score-track" class="flex flex-wrap justify-center gap-2 sm:gap-4 w-full">
+                    <!-- Score chips injected here -->
+                </div>
+
+                <!-- 20s Timer Bar -->
+                <div id="timer-container" class="w-full bg-gray-700 rounded-full overflow-hidden mt-1 h-6 relative shadow-inner">
+                    <div id="timer-bar" class="h-full bg-[#4ECDC4] w-full transition-all duration-100 ease-linear"></div>
+                    <div id="timer-text" class="absolute inset-0 flex items-center justify-center font-black text-white text-sm sm:text-base text-stroke-sm drop-shadow-md">20</div>
+                </div>
+
+                <!-- Question Area -->
+                <div id="question-header-area" class="w-full flex justify-center items-center gap-4 mt-2 bg-white/20 rounded-xl p-2 h-20 sm:h-24">
+                    <h2 id="question-title" class="question-text font-black uppercase text-center text-stroke-sm text-[#FFE66D] drop-shadow-md">What is it?</h2>
+                    <div id="question-visual" class="text-3xl sm:text-5xl drop-shadow-lg flex items-center"></div>
+                </div>
+            </header>
+
+            <!-- MIDDLE/LOWER ZONE: Falling Targets -->
+            <main id="game-main" class="flex-grow relative w-full pointer-events-auto overflow-hidden">
+                <div id="falling-container" class="absolute inset-0 w-full h-full"></div>
+                
+                <!-- Feedback Overlay -->
+                <div id="feedback-overlay" class="absolute inset-0 z-20 flex items-center justify-center bg-white/80 hidden backdrop-blur-sm m-4 rounded-3xl border-4 border-[var(--dark)] shadow-[8px_8px_0_0_#000]">
+                    <div class="text-center flex flex-col items-center gap-4 animate-pop">
+                        <div id="feedback-emoji" class="text-6xl sm:text-8xl">✨</div>
+                        <div id="feedback-text" class="title-text font-black uppercase text-stroke text-[#4ECDC4]">Correct!</div>
+                        <div id="feedback-subtext" class="subtitle-text font-bold bg-[#FFE66D] text-[var(--dark)] px-6 py-2 rounded-full border-4 border-black mt-4"></div>
+                    </div>
+                </div>
+                
+                <div id="times-up-overlay" class="absolute inset-0 z-30 flex items-center justify-center hidden">
+                    <div class="title-text font-black uppercase text-stroke text-[#FF6B6B] animate-pop text-center drop-shadow-2xl bg-white/95 px-10 py-6 rounded-3xl border-8 border-[#FF6B6B]">TIME'S UP!</div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div id="screen-end" class="screen bg-[#FFE66D] justify-center items-center p-4">
+        <div class="neo-box p-8 w-full max-w-4xl flex flex-col items-center gap-6 animate-pop">
+            <h1 class="title-text font-black uppercase text-stroke text-[#FF6B6B] text-center">Battle Complete!</h1>
+            <div class="text-4xl text-center font-bold">🏆 Phonics Champions! 🏆</div>
+            
+            <!-- Ranking Display -->
+            <div id="ranking-container" class="w-full flex flex-col gap-3 my-4">
+                <!-- Ranks injected here -->
+            </div>
+            
+            <div class="flex flex-col sm:flex-row gap-4 w-full mt-4">
+                <button onclick="restartGame(true)" class="neo-btn bg-[#4ECDC4] text-white py-4 px-6 btn-text flex-1">
+                    Play Again
+                </button>
+                <button onclick="changeScreen('screen-setup')" class="neo-btn bg-[#FF6B6B] text-white py-4 px-6 btn-text flex-1">
+                    New Groups
+                </button>
+                <button onclick="changeScreen('screen-home')" class="neo-btn bg-white text-[var(--dark)] py-4 px-6 btn-text flex-1">
+                    Home
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Game Constants & Assets
+        const TEAM_ICONS = ['⭐', '🐚', '🦷', '🧀', '🌊', '🌱'];
+        const TEAM_COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#FF9F1C', '#A057FE', '#84DCC6'];
+        
+        const WORDS_EE = [
+            { word: 'TEETH', icon: '🦷' },
+            { word: 'CHEESE', icon: '🧀' },
+            { word: 'SEE', icon: '👀' },
+            { word: 'THREE', icon: '3️⃣' },
+            { word: 'FEET', icon: '🦶' }
+        ];
+
+        const WORDS_EA = [
+            { word: 'BEACH', icon: '🏖️' },
+            { word: 'CLEAN', icon: '✨' },
+            { word: 'PEAS', icon: '🫛' },
+            { word: 'SEA', icon: '🌊' },
+            { word: 'READ', icon: '📖' },
+            { word: 'EAT', icon: '🍽️' }
+        ];
+
+        // Combine for utility
+        const ALL_WORDS = [...WORDS_EE.map(w => ({...w, type: 'EE'})), ...WORDS_EA.map(w => ({...w, type: 'EA'}))];
+
+        // Game State
+        let state = {
+            numGroups: 2,
+            pupils: [],
+            teams: [],
+            currentTeamIndex: 0,
+            currentRoundIndex: 0,
+            questionPool: [],
+            currentQuestion: null,
+            isAnswering: false,
+            timer: null,
+            timeLeft: 20,
+            arInitialized: false
+        };
+
+        const ROUNDS = [
+            { id: 'R1', title: 'Round 1: Mystery Picture', instructions: 'Shoot the correct word!' },
+            { id: 'R2', title: 'Round 2: EE or EA?', instructions: 'Shoot the matching sound!' },
+            { id: 'R3', title: 'Round 3: Complete the Word', instructions: 'Shoot the missing letters!' },
+            { id: 'R4', title: 'Final Speed AR Battle!', instructions: 'Answer Fast! (20 Seconds)' }
+        ];
+
+        // AR & Target Tracking
+        let activeTargets = [];
+        let gameLoopRef = null;
+        let baseSpeed = 4.0; 
+        let handX = window.innerWidth / 2;
+        let handY = window.innerHeight / 2;
+        let isPinching = false;
+        let shotDebounce = false;
+
+        function changeScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+            
+            // Fix input focus bug on iOS
+            if(screenId !== 'screen-setup') {
+                document.activeElement.blur(); 
+            }
+        }
+
+        function shuffleArray(array) {
+            let curId = array.length;
+            while (0 !== curId) {
+                let randId = Math.floor(Math.random() * curId);
+                curId -= 1;
+                let tmp = array[curId];
+                array[curId] = array[randId];
+                array[randId] = tmp;
+            }
+            return array;
+        }
+
+        function selectGroupCount(num) {
+            state.numGroups = num;
+            document.querySelectorAll('.group-btn').forEach(btn => {
+                btn.classList.remove('bg-[#FF6B6B]', 'text-white', 'border-black');
+                btn.classList.add('bg-white');
+                if(parseInt(btn.dataset.count) === num) {
+                    btn.classList.add('bg-[#FF6B6B]', 'text-white', 'border-black');
+                    btn.classList.remove('bg-white');
+                }
+            });
+        }
+        // Initialize selection visually
+        selectGroupCount(2);
+
+        function generateGroups() {
+            const rawNames = document.getElementById('pupil-names').value;
+            // Split by newline or comma, remove empty
+            let names = rawNames.split(/[\n,]+/).map(n => n.trim()).filter(n => n.length > 0);
+            
+            if (names.length === 0) {
+                // Generate dummy names if empty for quick play/testing
+                names = ["Aiman", "Sofia", "Ali", "Hannah", "Rayyan", "Izz", "Zara", "Mikael"];
+                document.getElementById('pupil-names').value = names.join('\n');
+            }
+
+            state.pupils = shuffleArray([...names]);
+            state.teams = [];
+            
+            for(let i=0; i<state.numGroups; i++) {
+                state.teams.push({
+                    id: i,
+                    name: `Team ${i+1}`,
+                    icon: TEAM_ICONS[i % TEAM_ICONS.length],
+                    color: TEAM_COLORS[i % TEAM_COLORS.length],
+                    members: [],
+                    score: 0,
+                    streak: 0
+                });
+            }
+
+            // Distribute evenly
+            state.pupils.forEach((pupil, index) => {
+                state.teams[index % state.numGroups].members.push(pupil);
+            });
+
+            renderGroups();
+            changeScreen('screen-groups');
+        }
+
+        function renderGroups() {
+            const container = document.getElementById('group-cards-container');
+            container.innerHTML = '';
+            
+            state.teams.forEach(team => {
+                const card = document.createElement('div');
+                card.className = `neo-box p-4 flex flex-col gap-2 items-center animate-pop`;
+                card.style.borderColor = team.color;
+                
+                let membersHTML = team.members.map(m => `<div class="font-bold text-lg text-center w-full bg-gray-100 rounded p-1">${m}</div>`).join('');
+                
+                card.innerHTML = `
+                    <div class="text-4xl">${team.icon}</div>
+                    <h3 class="font-black text-2xl uppercase" style="color: ${team.color}">${team.name}</h3>
+                    <div class="w-full mt-2 flex flex-col gap-1">
+                        ${membersHTML}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        async function startBattle() {
+            await initAR();
+            state.currentTeamIndex = 0;
+            state.currentRoundIndex = 0;
+            state.teams.forEach(t => { t.score = 0; t.streak = 0; });
+            buildQuestionPoolForRound();
+            updateScoreboard();
+            changeScreen('screen-game');
+            loadNextTurn();
+        }
+
+        async function restartGame(keepGroups) {
+            if(!keepGroups) {
+                changeScreen('screen-setup');
+                return;
+            }
+            await initAR();
+            state.currentTeamIndex = 0;
+            state.currentRoundIndex = 0;
+            state.teams.forEach(t => { t.score = 0; t.streak = 0; });
+            buildQuestionPoolForRound();
+            updateScoreboard();
+            changeScreen('screen-game');
+            loadNextTurn();
+        }
+
+        async function initAR() {
+            if(state.arInitialized) return;
+            const videoElement = document.getElementById('ar-video');
+            const cursor = document.getElementById('ar-cursor');
+            
+            try {
+                const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+                hands.setOptions({
+                    maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6
+                });
+                hands.onResults(onARResults);
+                
+                const camera = new Camera(videoElement, {
+                    onFrame: async () => { await hands.send({image: videoElement}); },
+                    width: 1280, height: 720, facingMode: 'user'
+                });
+                camera.start();
+                state.arInitialized = true;
+                cursor.classList.remove('hidden');
+                setupFallbackControls();
+            } catch (e) {
+                console.log("AR init failed or fallback required.", e);
+                setupFallbackControls();
+            }
+        }
+
+        function onARResults(results) {
+            const cursor = document.getElementById('ar-cursor');
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                const indexTip = landmarks[8];
+                const thumbTip = landmarks[4];
+                
+                const videoElement = document.getElementById('ar-video');
+                const videoWidth = videoElement.videoWidth || 1280;
+                const videoHeight = videoElement.videoHeight || 720;
+                const windowWidth = window.innerWidth;
+                const windowHeight = window.innerHeight;
+                
+                // Maps the mirrored aspect ratio bounds correctly using object-fit: cover offset 
+                const scale = Math.max(windowWidth / videoWidth, windowHeight / videoHeight);
+                const coveredWidth = videoWidth * scale;
+                const coveredHeight = videoHeight * scale;
+                const offsetX = (coveredWidth - windowWidth) / 2;
+                const offsetY = (coveredHeight - windowHeight) / 2;
+                
+                handX = ((1 - indexTip.x) * coveredWidth) - offsetX;
+                handY = (indexTip.y * coveredHeight) - offsetY;
+                
+                // Hand Pinch Logic
+                const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y, indexTip.z - thumbTip.z);
+                const wasPinching = isPinching;
+                isPinching = dist < 0.08; 
+                
+                if (isPinching && !wasPinching) {
+                    cursor.classList.add('pinching');
+                    triggerShoot();
+                } else if (!isPinching) {
+                    cursor.classList.remove('pinching');
+                }
+                
+                cursor.style.left = `${handX}px`;
+                cursor.style.top = `${handY}px`;
+                if(cursor.classList.contains('hidden')) cursor.classList.remove('hidden');
+            }
+        }
+
+        function setupFallbackControls() {
+            const cursor = document.getElementById('ar-cursor');
+            document.addEventListener('mousemove', (e) => {
+                if(!document.getElementById('screen-game').classList.contains('active')) return;
+                handX = e.clientX; handY = e.clientY;
+                cursor.style.left = `${handX}px`; cursor.style.top = `${handY}px`;
+                cursor.classList.remove('hidden');
+            });
+            document.addEventListener('mousedown', (e) => {
+                if(document.getElementById('screen-game').classList.contains('active')) {
+                    cursor.classList.add('pinching'); triggerShoot();
+                }
+            });
+            document.addEventListener('mouseup', () => cursor.classList.remove('pinching'));
+            
+            document.addEventListener('touchstart', (e) => {
+                if(!document.getElementById('screen-game').classList.contains('active')) return;
+                handX = e.touches[0].clientX; handY = e.touches[0].clientY;
+                cursor.style.left = `${handX}px`; cursor.style.top = `${handY}px`;
+                cursor.classList.add('pinching'); cursor.classList.remove('hidden');
+                triggerShoot();
+            }, {passive: true});
+            document.addEventListener('touchend', () => cursor.classList.remove('pinching'));
+        }
+
+        function updateScoreboard() {
+            document.getElementById('round-display').innerText = ROUNDS[state.currentRoundIndex].title;
+            const activeTeam = state.teams[state.currentTeamIndex];
+            const activeDisplay = document.getElementById('active-team-display');
+            activeDisplay.innerHTML = `${activeTeam.icon} ${activeTeam.name}'s Turn!`;
+            activeDisplay.style.borderColor = activeTeam.color;
+            activeDisplay.style.color = activeTeam.color;
+
+            const track = document.getElementById('score-track');
+            track.innerHTML = '';
+            
+            state.teams.forEach((team, idx) => {
+                const isCurrent = idx === state.currentTeamIndex;
+                const chip = document.createElement('div');
+                chip.className = `flex items-center gap-1 sm:gap-2 px-3 py-1 rounded-full border-2 font-bold score-text transition-all ${isCurrent ? 'bg-white text-black scale-110 shadow-md' : 'bg-black/50 text-white border-gray-500'}`;
+                if(isCurrent) chip.style.borderColor = team.color;
+                
+                chip.innerHTML = `<span>${team.icon}</span> <span>${team.score}</span>`;
+                track.appendChild(chip);
+            });
+        }
+
+        function buildQuestionPoolForRound() {
+            state.questionPool = [];
+            let roundId = ROUNDS[state.currentRoundIndex].id;
+            let numQuestionsNeeded = Math.max(state.teams.length * 2, 6); 
+            let mixedWords = shuffleArray([...ALL_WORDS]);
+
+            for(let i = 0; i < numQuestionsNeeded; i++) {
+                let w = mixedWords[i % mixedWords.length];
+                
+                if(roundId === 'R1') {
+                    let options = [w.word];
+                    let wrongOptions = shuffleArray([...ALL_WORDS]).filter(x => x.word !== w.word).slice(0, 3);
+                    options.push(...wrongOptions.map(wo => wo.word));
+                    options = shuffleArray(options).slice(0, 4);
+                    
+                    state.questionPool.push({ type: 'R1', item: w, options: options, correct: w.word });
+                } 
+                else if (roundId === 'R2') {
+                    state.questionPool.push({ type: 'R2', item: w, options: ['EE', 'EA', 'EE', 'EA'], correct: w.type });
+                }
+                else if (roundId === 'R3') {
+                    let displayWord = w.word.replace(w.type, '__');
+                    state.questionPool.push({ type: 'R3', item: w, displayWord: displayWord, options: ['EE', 'EA', 'EE', 'EA'], correct: w.type });
+                }
+                else if (roundId === 'R4') {
+                    if (i === 0) {
+                        state.questionPool.push({
+                            type: 'R4_SENTENCE', sentence: "Jean keeps her teeth really clean.", question: "Shoot an /iː/ word!",
+                            options: ["TEETH", "CLEAN", "KEEPS", "JEAN"], correct: ["TEETH", "CLEAN"] 
+                        });
+                    } else {
+                        let subType = ['R1', 'R2', 'R3'][Math.floor(Math.random() * 3)];
+                        let displayWord = w.word.replace(w.type, '__');
+                        let options = (subType === 'R1') ? 
+                            shuffleArray([w.word, ...shuffleArray([...ALL_WORDS]).filter(x=>x.word!==w.word).slice(0,3).map(x=>x.word)]) : 
+                            ['EE', 'EA', 'EE', 'EA'];
+                        state.questionPool.push({ type: 'R4_MIX', item: w, subType: subType, options: options, displayWord: displayWord, correct: (subType === 'R1' ? w.word : w.type) });
+                    }
+                }
+            }
+        }
+
+        function loadNextTurn() {
+            state.isAnswering = false;
+            clearInterval(state.timer);
+            document.getElementById('falling-container').innerHTML = '';
+            activeTargets = [];
+            
+            updateScoreboard();
+
+            if(state.questionPool.length === 0) {
+                state.currentRoundIndex++;
+                if(state.currentRoundIndex >= ROUNDS.length) { endGame(); return; }
+                buildQuestionPoolForRound();
+                updateScoreboard();
+                showRoundTransition();
+                return;
+            }
+
+            state.currentQuestion = state.questionPool.shift();
+            renderQuestionUI();
+        }
+
+        function moveToNextTurn() {
+            state.currentTeamIndex = (state.currentTeamIndex + 1) % state.teams.length;
+            loadNextTurn();
+        }
+
+        function showRoundTransition() {
+            const visual = document.getElementById('question-visual');
+            const title = document.getElementById('question-title');
+            
+            title.innerText = "";
+            visual.innerHTML = `
+                <div class="neo-box p-4 bg-[var(--accent)] text-center animate-pop border-[var(--dark)]">
+                    <h2 class="title-text font-black uppercase text-stroke text-white">${ROUNDS[state.currentRoundIndex].title}</h2>
+                    <p class="subtitle-text font-bold mt-2 text-[var(--dark)]">${ROUNDS[state.currentRoundIndex].instructions}</p>
+                </div>
+            `;
+            
+            setTimeout(() => {
+                state.currentQuestion = state.questionPool.shift();
+                renderQuestionUI();
+            }, 3000);
+        }
+
+        function renderQuestionUI() {
+            const q = state.currentQuestion;
+            const title = document.getElementById('question-title');
+            const visual = document.getElementById('question-visual');
+            
+            visual.innerHTML = '';
+            let qType = q.type;
+            let subType = q.subType;
+            
+            if (qType === 'R4_MIX') qType = subType;
+
+            if (qType === 'R1') {
+                title.innerText = "What is it?";
+                visual.innerHTML = `<span class="animate-pop text-6xl">${q.item.icon}</span>`;
+            } else if (qType === 'R2') {
+                title.innerText = "EE or EA?";
+                visual.innerHTML = `<span class="font-black tracking-widest text-white px-6 py-2 bg-[#FF6B6B] rounded-full animate-pop">${q.item.word}</span>`;
+            } else if (qType === 'R3') {
+                title.innerText = "Complete it!";
+                visual.innerHTML = `<span class="animate-float mr-4 text-5xl">${q.item.icon}</span><span class="font-black tracking-widest text-[var(--dark)] px-6 py-2 bg-white border-4 border-black rounded-full animate-pop">${q.displayWord.replace('__', '_')}</span>`;
+            } else if (qType === 'R4_SENTENCE') {
+                title.innerText = q.question;
+                visual.innerHTML = `<span class="font-bold text-lg sm:text-2xl text-[var(--dark)] px-4 py-2 bg-white rounded-xl text-center leading-tight shadow-md">${q.sentence}</span>`;
+            }
+            
+            spawnTargets(q.options, q.correct);
+            startTimer(20);
+        }
+
+        function spawnTargets(options, correct) {
+            const container = document.getElementById('falling-container');
+            container.innerHTML = '';
+            activeTargets = [];
+            
+            let dropSpeed = baseSpeed + (state.currentRoundIndex * 1.5);
+
+            let slots = options.length;
+            let slotWidth = window.innerWidth / slots;
+            
+            options.forEach((opt, idx) => {
+                const el = document.createElement('div');
+                el.className = 'falling-target neo-btn bg-white px-4 py-2 sm:px-6 sm:py-4 text-center font-black text-2xl sm:text-4xl text-[var(--dark)] pointer-events-none drop-shadow-xl absolute flex items-center justify-center';
+                if (opt.length > 5) el.style.fontSize = '1.2rem';
+                el.innerText = opt;
+                
+                let xOffset = (idx * slotWidth) + (slotWidth / 2) - 60;
+                xOffset += (Math.random() * 40 - 20);
+                let y = -150 - (Math.random() * 200);
+                
+                el.style.transform = `translate3d(${xOffset}px, ${y}px, 0)`;
+                container.appendChild(el);
+                
+                activeTargets.push({
+                    element: el, text: opt, isCorrect: (Array.isArray(correct) ? correct.includes(opt) : opt === correct),
+                    x: xOffset, y: y, speed: dropSpeed + (Math.random() * 2.0),
+                    swayPhase: Math.random() * Math.PI * 2, swaySpeed: 0.02 + Math.random() * 0.03, swayAmt: 25 + Math.random() * 40,
+                    baseX: xOffset, width: 120, height: 80, active: true
+                });
+            });
+            
+            if (!gameLoopRef) gameLoopRef = requestAnimationFrame(updateGameLoop);
+        }
+
+        function updateGameLoop() {
+            if (!state.isAnswering && activeTargets.length > 0) {
+                const containerHeight = document.getElementById('falling-container').offsetHeight;
+                
+                activeTargets.forEach(target => {
+                    if (!target.active) return;
+                    target.y += target.speed;
+                    target.swayPhase += target.swaySpeed;
+                    target.x = target.baseX + Math.sin(target.swayPhase) * target.swayAmt;
+                    
+                    const maxW = window.innerWidth - target.width;
+                    if (target.x < 0) target.x = 0;
+                    if (target.x > maxW) target.x = maxW;
+                    
+                    if (target.y > containerHeight + 100) {
+                        target.y = -100 - (Math.random() * 100);
+                        target.baseX = Math.random() * (window.innerWidth - target.width);
+                    }
+                    
+                    target.element.style.transform = `translate3d(${target.x}px, ${target.y}px, 0)`;
+                });
+            }
+            gameLoopRef = requestAnimationFrame(updateGameLoop);
+        }
+
+        function triggerShoot() {
+            if (state.isAnswering || shotDebounce) return;
+            shotDebounce = true;
+            setTimeout(() => shotDebounce = false, 250); 
+            
+            createShootEffect(handX, handY);
+            
+            let hitTarget = null;
+            for (let target of activeTargets) {
+                if (!target.active) continue;
+                const rect = target.element.getBoundingClientRect();
+                if (handX >= rect.left && handX <= rect.right && handY >= rect.top && handY <= rect.bottom) {
+                    hitTarget = target;
+                    break;
+                }
+            }
+            if (hitTarget) handleHit(hitTarget);
+        }
+
+        function createShootEffect(x, y) {
+            const effect = document.createElement('div');
+            effect.className = 'fixed pointer-events-none z-[9999] rounded-full bg-white opacity-90';
+            effect.style.left = `${x}px`; effect.style.top = `${y}px`;
+            effect.style.width = '30px'; effect.style.height = '30px';
+            effect.style.transform = 'translate(-50%, -50%) scale(1)';
+            effect.style.transition = 'transform 0.3s ease-out, opacity 0.3s ease-out';
+            effect.style.boxShadow = '0 0 25px 15px #FFE66D';
+            document.body.appendChild(effect);
+            
+            requestAnimationFrame(() => {
+                effect.style.transform = 'translate(-50%, -50%) scale(5) rotate(45deg)';
+                effect.style.opacity = '0';
+            });
+            setTimeout(() => effect.remove(), 300);
+        }
+
+        function handleHit(target) {
+            if (target.isCorrect) {
+                state.isAnswering = true;
+                clearInterval(state.timer);
+                target.element.style.transform += ' scale(1.4)';
+                target.element.style.filter = 'brightness(1.2) drop-shadow(0 0 20px #4ECDC4)';
+                target.element.style.zIndex = '50';
+                
+                const team = state.teams[state.currentTeamIndex];
+                team.score += 10;
+                team.streak++;
+                if (team.streak === 3) {
+                    team.score += 5; showStreakBonus(); team.streak = 0;
+                }
+                showFeedback(true, target);
+            } else {
+                target.element.classList.add('shake-anim');
+                target.element.style.backgroundColor = '#FF6B6B';
+                target.element.style.color = 'white';
+                showTryAgainToast(handX, handY);
+                setTimeout(() => {
+                    if(target.element) {
+                        target.element.classList.remove('shake-anim');
+                        target.element.style.backgroundColor = 'white';
+                        target.element.style.color = 'var(--dark)';
+                    }
+                }, 500);
+            }
+        }
+
+        function showTryAgainToast(x, y) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed font-black text-lg sm:text-2xl text-white bg-[var(--dark)] px-4 py-2 rounded-full pointer-events-none drop-shadow-xl z-[9999]';
+            toast.innerText = 'TRY AGAIN!';
+            toast.style.left = `${x}px`; toast.style.top = `${y}px`;
+            toast.style.transform = 'translate(-50%, -50%)';
+            toast.style.transition = 'transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.5s ease-out';
+            document.body.appendChild(toast);
+            
+            requestAnimationFrame(() => {
+                toast.style.transform = 'translate(-50%, -100px)';
+                toast.style.opacity = '0';
+            });
+            setTimeout(() => toast.remove(), 500);
+        }
+
+        function startTimer(seconds) {
+            clearInterval(state.timer);
+            state.timeLeft = seconds;
+            const bar = document.getElementById('timer-bar');
+            const text = document.getElementById('timer-text');
+            
+            bar.style.width = '100%'; bar.style.backgroundColor = '#4ECDC4';
+            bar.classList.remove('animate-pulse-fast');
+            text.innerText = Math.ceil(state.timeLeft);
+            
+            let lastTime = performance.now();
+            
+            state.timer = setInterval(() => {
+                if(state.isAnswering) return; 
+
+                let now = performance.now();
+                let dt = (now - lastTime) / 1000;
+                lastTime = now;
+                
+                state.timeLeft -= dt;
+                if(state.timeLeft < 0) state.timeLeft = 0;
+                
+                let percent = (state.timeLeft / 20) * 100;
+                bar.style.width = `${percent}%`;
+                text.innerText = Math.ceil(state.timeLeft);
+                
+                if (state.timeLeft <= 5 && !bar.classList.contains('animate-pulse-fast')) {
+                    bar.style.backgroundColor = '#FF6B6B';
+                    bar.classList.add('animate-pulse-fast');
+                }
+                
+                if (state.timeLeft <= 0) {
+                    clearInterval(state.timer);
+                    handleTimeOut();
+                }
+            }, 50); 
+        }
+
+        function handleTimeOut() {
+            state.isAnswering = true;
+            const team = state.teams[state.currentTeamIndex];
+            team.streak = 0; 
+            
+            const overlay = document.getElementById('times-up-overlay');
+            overlay.classList.remove('hidden');
+            
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+                moveToNextTurn();
+            }, 2000);
+        }
+
+        function showStreakBonus() {
+            const streakEl = document.createElement('div');
+            streakEl.className = 'streak-anim title-text font-black text-stroke text-[#FFE66D] drop-shadow-2xl';
+            streakEl.innerHTML = '🔥 STREAK BONUS +5! 🔥';
+            document.body.appendChild(streakEl);
+            setTimeout(() => streakEl.remove(), 1500);
+        }
+
+        function showFeedback(isCorrect, target = null) {
+            const overlay = document.getElementById('feedback-overlay');
+            const icon = document.getElementById('feedback-emoji');
+            const text = document.getElementById('feedback-text');
+            const subtext = document.getElementById('feedback-subtext');
+            
+            overlay.classList.remove('hidden');
+            const q = state.currentQuestion;
+            let explanation = '';
+
+            if (isCorrect) {
+                icon.innerText = '✨';
+                text.innerText = `Correct! +10`;
+                text.className = "title-text font-black uppercase text-stroke text-[#4ECDC4]";
+                
+                if (q.item && q.type !== 'R4_SENTENCE') {
+                    explanation = `${q.item.word.toLowerCase()} → ${q.item.type} → /iː/`;
+                } else if (q.type === 'R4_SENTENCE') {
+                    explanation = `TEETH & CLEAN!`;
+                }
+            }
+
+            if (explanation) {
+                subtext.innerText = explanation;
+                subtext.style.display = 'block';
+            } else {
+                subtext.style.display = 'none';
+            }
+
+            updateScoreboard();
+
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+                moveToNextTurn();
+            }, 2000); 
+        }
+
+        function endGame() {
+            // Sort teams by score descending
+            let sortedTeams = [...state.teams].sort((a, b) => b.score - a.score);
+            
+            const container = document.getElementById('ranking-container');
+            container.innerHTML = '';
+            
+            const medals = ['🥇', '🥈', '🥉'];
+            
+            sortedTeams.forEach((team, idx) => {
+                const rank = idx < 3 ? medals[idx] : `${idx+1}.`;
+                
+                const row = document.createElement('div');
+                row.className = `neo-box p-4 flex justify-between items-center bg-white ${idx === 0 ? 'border-[#FF6B6B] border-8 scale-105 my-2' : ''}`;
+                
+                row.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <span class="text-3xl sm:text-5xl">${rank}</span>
+                        <span class="font-black text-xl sm:text-3xl uppercase" style="color: ${team.color}">${team.icon} ${team.name}</span>
+                    </div>
+                    <div class="font-black text-2xl sm:text-4xl">${team.score} pts</div>
+                `;
+                container.appendChild(row);
+            });
+
+            changeScreen('screen-end');
+            
+            // Confetti effect using simple DOM elements
+            createConfetti();
+        }
+
+        function createConfetti() {
+            const colors = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A057FE'];
+            for(let i=0; i<50; i++) {
+                const conf = document.createElement('div');
+                conf.style.position = 'fixed';
+                conf.style.width = '15px';
+                conf.style.height = '15px';
+                conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                conf.style.left = Math.random() * 100 + 'vw';
+                conf.style.top = '-20px';
+                conf.style.borderRadius = Math.random() > 0.5 ? '50%' : '0';
+                conf.style.zIndex = '9999';
+                conf.style.transition = `top ${2 + Math.random()*2}s linear, transform ${2 + Math.random()*2}s ease-in-out`;
+                document.body.appendChild(conf);
+                
+                setTimeout(() => {
+                    conf.style.top = '120vh';
+                    conf.style.transform = `rotate(${Math.random() * 360}deg) translateX(${Math.random() * 100 - 50}px)`;
+                }, 50);
+                
+                setTimeout(() => conf.remove(), 4000);
+            }
+        }
+
+        // Handle resizing/orientation robustly without reloading
+        window.addEventListener('resize', () => {
+            // Recalculates viewport units naturally. 
+            // Ensures active screen elements resize via flex/grid.
+        });
+        
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', () => {
+                // Helps iOS Safari virtual keyboard resizing
+                document.body.style.height = window.visualViewport.height + 'px';
+            });
+        }
+    </script>
+</body>
+</html>
